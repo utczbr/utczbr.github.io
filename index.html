@@ -1,0 +1,818 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gabriel Stuart - Professional Mind Map</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0B0F19;
+            color: #E2E8F0;
+            overflow: hidden;
+            margin: 0;
+            padding: 0;
+        }
+
+        .mono { font-family: 'JetBrains Mono', monospace; }
+
+        #graph-container {
+            width: 100vw;
+            height: 100vh;
+            height: 100dvh;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 1;
+            touch-action: none;
+        }
+
+        #graph-container svg {
+            touch-action: none;
+        }
+
+        .node-circle {
+            stroke: #fff;
+            stroke-width: 1.5px;
+            cursor: pointer;
+            transition: stroke-width 0.2s, filter 0.2s;
+        }
+
+        .node-circle:hover {
+            stroke-width: 3px;
+            filter: drop-shadow(0 0 10px rgba(255, 255, 255, 0.9));
+        }
+
+        .pulse-ring {
+            fill: none;
+            stroke-width: 1.5px;
+            pointer-events: none;
+            transform-box: fill-box;
+            transform-origin: center;
+            animation: ringPulse 2.2s ease-out infinite;
+        }
+
+        @keyframes ringPulse {
+            0% { transform: scale(1); opacity: 0.75; }
+            100% { transform: scale(1.9); opacity: 0; }
+        }
+
+        .node-label {
+            font-size: 11px;
+            font-weight: 600;
+            fill: #E2E8F0;
+            pointer-events: none;
+            text-shadow: 0px 2px 4px rgba(0,0,0,0.9);
+        }
+
+        .focus-label {
+            font-size: 14px;
+            font-weight: 700;
+        }
+
+        .link {
+            stroke-opacity: 0.3;
+            transition: stroke-opacity 0.2s, stroke-width 0.2s;
+            fill: none;
+        }
+
+        #tooltip {
+            position: absolute;
+            background: rgba(15, 23, 42, 0.95);
+            border: 1px solid rgba(56, 189, 248, 0.4);
+            backdrop-filter: blur(10px);
+            color: white;
+            padding: 16px;
+            border-radius: 12px;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s, transform 0.1s;
+            z-index: 50;
+            max-width: 300px;
+            box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.7);
+        }
+
+        #tt-meta {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 10.5px;
+            color: #7DD3FC;
+            margin-top: 8px;
+            opacity: 0.85;
+            word-break: break-word;
+            border-top: 1px solid rgba(148,163,184,0.15);
+            padding-top: 6px;
+        }
+
+        .ui-layer {
+            position: relative;
+            z-index: 10;
+            pointer-events: none;
+        }
+
+        .ui-element {
+            pointer-events: auto;
+        }
+
+        /* Breadcrumb */
+        #breadcrumb-bar {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 4px;
+            font-size: 12px;
+        }
+        .crumb {
+            padding: 3px 10px;
+            border-radius: 999px;
+            background: rgba(255,255,255,0.05);
+            color: #94A3B8;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: background 0.15s, color 0.15s;
+            border: 1px solid transparent;
+        }
+        .crumb:hover {
+            background: rgba(255,255,255,0.12);
+            color: #F1F5F9;
+        }
+        .crumb.active {
+            color: #0B0F19;
+            font-weight: 700;
+            background: #E2E8F0;
+        }
+        .crumb-sep {
+            color: #475569;
+            font-size: 10px;
+        }
+
+        #back-hint {
+            font-size: 11px;
+            color: #64748B;
+            margin-top: 2px;
+        }
+
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: rgba(15, 23, 42, 0.5); }
+        ::-webkit-scrollbar-thumb { background: rgba(56, 189, 248, 0.5); border-radius: 10px; }
+
+        /* #ui-layer combines inset:0 with Tailwind's h-screen (100vh). The explicit
+           height wins over inset-driven auto-height, so on mobile browsers where the
+           address bar shrinks/grows the visible area, 100vh can exceed what's actually
+           visible — pushing the bottom-anchored legend panel off-screen. dvh tracks the
+           real visible viewport; it's identical to vh on desktop, so nothing changes there. */
+        #ui-layer {
+            height: 100vh;
+            height: 100dvh;
+        }
+
+        /* ---- Mobile layout: the panels above were sized for desktop and were
+           overflowing / clipping / eating most of the screen on phones. ---- */
+        @media (max-width: 640px) {
+            #ui-layer { padding: 10px; }
+
+            #app-header { flex-wrap: wrap; gap: 8px; }
+
+            #profile-card { max-width: min(72vw, 260px); padding: 10px 12px; }
+            #profile-card h1 { font-size: 15px; }
+            #profile-card p.text-sm { font-size: 11px; line-height: 1.3; }
+            #profile-card .flex.gap-3 { font-size: 9.5px; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+            #breadcrumb-bar { margin-top: 8px; padding-top: 8px; font-size: 10px; }
+            #back-hint { font-size: 9.5px; }
+
+            #zoom-controls { padding: 4px; gap: 2px; }
+            #zoom-controls button { padding: 6px; }
+            #zoom-controls button svg { width: 16px; height: 16px; }
+
+            #legend-panel { width: 132px; padding: 8px 10px; margin-bottom: 8px; }
+            #legend-panel h3 { font-size: 9.5px; margin-bottom: 6px; padding-bottom: 6px; }
+            #legend-container { font-size: 10.5px; gap: 5px; }
+            #legend-container > div { gap: 6px; }
+            #legend-container > div > div { width: 8px; height: 8px; }
+            #legend-hint { font-size: 8.5px; margin-top: 6px; }
+
+            #tooltip { max-width: min(68vw, 230px); padding: 10px 12px; }
+            #tt-title { font-size: 13px; }
+            #tt-type { font-size: 10px; }
+            #tt-desc { font-size: 11.5px; }
+            #tt-meta { font-size: 9.5px; }
+        }
+    </style>
+</head>
+<body class="antialiased">
+
+    <div id="tooltip">
+        <p id="tt-type" class="text-xs text-slate-400 uppercase tracking-wider mb-1 font-semibold">Category</p>
+        <h3 id="tt-title" class="font-bold text-base mb-1">Node Title</h3>
+        <p id="tt-desc" class="text-sm text-slate-200 leading-relaxed">Description goes here.</p>
+        <p id="tt-meta" class="hidden"></p>
+    </div>
+
+    <div id="ui-layer" class="ui-layer flex flex-col h-screen justify-between p-6 w-full absolute inset-0">
+
+        <header id="app-header" class="flex justify-between items-start gap-4">
+            <div id="profile-card" class="ui-element bg-slate-900/80 backdrop-blur-md border border-slate-700/50 p-4 rounded-xl shadow-xl max-w-md">
+                <h1 class="text-xl font-bold text-white tracking-wide">Gabriel S. Stuart</h1>
+                <p class="text-sm text-sky-400 font-medium">Developer — Automation, Computer Vision & Systems Simulation</p>
+                <div class="flex gap-3 mt-2 text-xs text-slate-400">
+                    <span>Florianópolis, Brazil</span>
+                    <span>•</span>
+                    <a href="https://github.com/utczbr" target="_blank" class="hover:text-white transition">github.com/utczbr</a>
+                </div>
+                <div id="breadcrumb-bar" class="mt-3 pt-3 border-t border-slate-700/50"></div>
+                <p id="back-hint"></p>
+            </div>
+
+            <div id="zoom-controls" class="ui-element flex gap-2 bg-slate-900/80 backdrop-blur-md border border-slate-700/50 p-2 rounded-lg shadow-xl">
+                <button id="zoom-in" class="p-2 hover:bg-slate-700 rounded text-slate-300 transition-colors" title="Zoom In">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7"></path></svg>
+                </button>
+                <button id="zoom-out" class="p-2 hover:bg-slate-700 rounded text-slate-300 transition-colors" title="Zoom Out">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM13 10H7"></path></svg>
+                </button>
+                <div class="w-px bg-slate-700 mx-1 my-1"></div>
+                <button id="reset-view" class="p-2 hover:bg-slate-700 rounded text-slate-300 transition-colors" title="Reset View">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                </button>
+                <div class="w-px bg-slate-700 mx-1 my-1"></div>
+                <button id="go-back" class="p-2 hover:bg-slate-700 rounded text-slate-300 transition-colors" title="Back">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
+                </button>
+            </div>
+        </header>
+
+        <div id="legend-panel" class="ui-element bg-slate-900/80 backdrop-blur-md border border-slate-700/50 p-4 rounded-xl shadow-2xl w-60 mt-auto mb-4 self-end">
+            <h3 class="text-xs font-bold text-slate-300 uppercase tracking-wider mb-3 border-b border-slate-700 pb-2">Map Legend</h3>
+            <div id="legend-container" class="flex flex-col gap-2 text-sm"></div>
+            <p id="legend-hint" class="text-[10px] text-slate-500 mt-4 leading-tight italic"></p>
+        </div>
+    </div>
+
+    <div id="graph-container"></div>
+
+    <script>
+const homeData = {"nodes": [{"id": "Gabriel Stuart", "group": 0, "radius": 28, "color": "#F8FAFC", "desc": "Developer focused on automation and software engineering applied to complex technical problems: computer vision, industrial simulation, and multi-agent systems.", "meta": "Florianópolis, Brazil"}, {"id": "Skills", "group": 1, "radius": 20, "color": "#64748B", "desc": "Technical competencies spanning computer vision, simulation, multi-agent systems, and performance engineering.", "meta": ""}, {"id": "Projects", "group": 1, "radius": 20, "color": "#64748B", "desc": "Three featured, actively-developed systems — double-click any project below to explore its real architecture.", "meta": ""}, {"id": "Experience", "group": 1, "radius": 20, "color": "#64748B", "desc": "Professional and team background.", "meta": ""}, {"id": "Education", "group": 1, "radius": 20, "color": "#64748B", "desc": "Academic background at UFSC.", "meta": ""}, {"id": "Plot-in", "group": 2, "radius": 23, "color": "#22D3EE", "drillKey": "Plot-in", "desc": "Open-source CV system extracting quantitative data from chart images and PDFs. 299 files, 8 chart types, statistical validation framework.", "meta": "github.com/utczbr/Plot-in · Python, Jupyter"}, {"id": "h2_plant", "group": 2, "radius": 24, "color": "#34D399", "drillKey": "h2_plant", "desc": "Modular hydrogen-plant simulator covering electrolysis and ATR routes. 325 files across a 12-layer architecture, 95%+ test coverage.", "meta": "github.com/utczbr/h2_plant · Python"}, {"id": "Matrix_Factory", "group": 2, "radius": 25, "color": "#E879F9", "drillKey": "Matrix_Factory", "desc": "Co-simulation digital twin of a PEM fuel-cell line: Python physics engine + Java BDI cognitive layer over gRPC.", "meta": "github.com/utczbr/Matrix_Factory · Python, Java"}, {"id": "Robota Team", "group": 3, "radius": 18, "color": "#FB923C", "desc": "Builder, 7/2022 – 9/2023. Development of line-following robots.", "meta": "Robota Competition Team"}, {"id": "ROGER Renewable Energy", "group": 3, "radius": 18, "color": "#FB923C", "desc": "External Developer, 11/2025 – 5/2026. Dynamic physical simulation for a hydrogen plant, plus CAPEX/OPEX validation — the origin of h2_plant.", "meta": ""}, {"id": "UFSC", "group": 3, "radius": 19, "color": "#A78BFA", "drillKey": "UFSC", "desc": "Control and Automation Engineering, expected 2027. Graduate coursework as a special student, PPGEAS (2024–2026) — double-click to see every course, grade, and professor.", "meta": "Federal University of Santa Catarina"}, {"id": "Computer Vision", "group": 4, "radius": 16, "color": "#F472B6", "desc": "OpenCV, YOLO, ONNX, classification, detection-model routing, PDF/chart extraction.", "meta": ""}, {"id": "Simulation", "group": 4, "radius": 16, "color": "#F472B6", "desc": "Event-driven architecture, thermodynamic modeling, distributed co-simulation, multi-stage systems.", "meta": ""}, {"id": "Multi-Agent Systems", "group": 4, "radius": 16, "color": "#F472B6", "desc": "Holonic architecture (PROSA/ADACOR), Contract-Net negotiation, two-phase-commit coordination.", "meta": ""}, {"id": "Software Eng", "group": 4, "radius": 16, "color": "#F472B6", "desc": "Modular layered architecture, automated testing, CI/CD, cross-platform & Docker packaging.", "meta": ""}, {"id": "Performance", "group": 4, "radius": 16, "color": "#F472B6", "desc": "JIT compilation, Cython extensions, lookup tables for property calculations.", "meta": ""}, {"id": "Data & Stats", "group": 4, "radius": 16, "color": "#F472B6", "desc": "Validation metrics (Cohen's Kappa, Lin's CCC), categorical accuracy, hypothesis testing (Welch, Mann-Whitney), techno-economic analysis.", "meta": ""}, {"id": "Python", "group": 5, "radius": 15, "color": "#FBBF24", "desc": "Primary language across all three featured projects.", "meta": ""}, {"id": "Java", "group": 5, "radius": 14, "color": "#FBBF24", "desc": "Used for the Cartago/JaCaMo multi-agent cognitive layer.", "meta": ""}, {"id": "C/C++", "group": 5, "radius": 12, "color": "#FBBF24", "desc": "Low-level systems language, used on the Robota line-following robots.", "meta": ""}, {"id": "OpenCV & YOLO", "group": 5, "radius": 14, "color": "#FBBF24", "desc": "Image processing and object detection.", "meta": ""}, {"id": "gRPC", "group": 5, "radius": 13, "color": "#FBBF24", "desc": "HLA-style real-time RPC bridging Python physics and Java agents.", "meta": ""}, {"id": "JaCaMo/Jason", "group": 5, "radius": 14, "color": "#FBBF24", "desc": "BDI multi-agent programming platform over Cartago artifacts.", "meta": ""}, {"id": "Numba", "group": 5, "radius": 13, "color": "#FBBF24", "desc": "JIT compiler used across both simulation projects' hot paths.", "meta": ""}, {"id": "PROSA/ADACOR", "group": 5, "radius": 12, "color": "#FBBF24", "desc": "Two coexisting holonic manufacturing organization paradigms.", "meta": ""}, {"id": "Docker & CI/CD", "group": 5, "radius": 12, "color": "#FBBF24", "desc": "Containerization and GitHub Actions pipelines.", "meta": ""}, {"id": "PyQt6", "group": 5, "radius": 13, "color": "#FBBF24", "desc": "Desktop GUI toolkit behind both Plot-in's editor and h2_plant's visual node editor.", "meta": ""}, {"id": "CoolProp", "group": 5, "radius": 11, "color": "#FBBF24", "desc": "Real-gas & steam property library backing h2_plant's thermodynamic lookup tables.", "meta": ""}], "links": [{"source": "Gabriel Stuart", "target": "Skills", "value": 5}, {"source": "Gabriel Stuart", "target": "Projects", "value": 5}, {"source": "Gabriel Stuart", "target": "Experience", "value": 4}, {"source": "Gabriel Stuart", "target": "Education", "value": 4}, {"source": "Projects", "target": "Plot-in", "value": 4}, {"source": "Projects", "target": "h2_plant", "value": 4}, {"source": "Projects", "target": "Matrix_Factory", "value": 4}, {"source": "Experience", "target": "Robota Team", "value": 3}, {"source": "Experience", "target": "ROGER Renewable Energy", "value": 3}, {"source": "Education", "target": "UFSC", "value": 3}, {"source": "Skills", "target": "Computer Vision", "value": 3}, {"source": "Skills", "target": "Simulation", "value": 3}, {"source": "Skills", "target": "Multi-Agent Systems", "value": 3}, {"source": "Skills", "target": "Software Eng", "value": 3}, {"source": "Skills", "target": "Performance", "value": 3}, {"source": "Skills", "target": "Data & Stats", "value": 3}, {"source": "Python", "target": "Software Eng", "value": 2}, {"source": "Java", "target": "Software Eng", "value": 2}, {"source": "C/C++", "target": "Software Eng", "value": 1}, {"source": "OpenCV & YOLO", "target": "Computer Vision", "value": 3}, {"source": "gRPC", "target": "Simulation", "value": 2}, {"source": "JaCaMo/Jason", "target": "Multi-Agent Systems", "value": 3}, {"source": "PROSA/ADACOR", "target": "Multi-Agent Systems", "value": 3}, {"source": "Numba", "target": "Performance", "value": 3}, {"source": "Docker & CI/CD", "target": "Software Eng", "value": 2}, {"source": "PyQt6", "target": "Software Eng", "value": 2}, {"source": "CoolProp", "target": "Performance", "value": 2}, {"source": "Plot-in", "target": "Computer Vision", "value": 4}, {"source": "Plot-in", "target": "Python", "value": 3}, {"source": "Plot-in", "target": "OpenCV & YOLO", "value": 2}, {"source": "Plot-in", "target": "Data & Stats", "value": 2}, {"source": "Plot-in", "target": "Docker & CI/CD", "value": 1}, {"source": "Plot-in", "target": "PyQt6", "value": 2}, {"source": "h2_plant", "target": "Simulation", "value": 4}, {"source": "h2_plant", "target": "Python", "value": 3}, {"source": "h2_plant", "target": "Performance", "value": 2}, {"source": "h2_plant", "target": "Numba", "value": 2}, {"source": "h2_plant", "target": "ROGER Renewable Energy", "value": 3}, {"source": "h2_plant", "target": "PyQt6", "value": 2}, {"source": "h2_plant", "target": "CoolProp", "value": 2}, {"source": "Matrix_Factory", "target": "Simulation", "value": 4}, {"source": "Matrix_Factory", "target": "Multi-Agent Systems", "value": 4}, {"source": "Matrix_Factory", "target": "Python", "value": 2}, {"source": "Matrix_Factory", "target": "Java", "value": 3}, {"source": "Matrix_Factory", "target": "gRPC", "value": 3}, {"source": "Matrix_Factory", "target": "JaCaMo/Jason", "value": 3}, {"source": "Matrix_Factory", "target": "Numba", "value": 2}, {"source": "Matrix_Factory", "target": "PROSA/ADACOR", "value": 2}, {"source": "Matrix_Factory", "target": "Data & Stats", "value": 2}, {"source": "Robota Team", "target": "C/C++", "value": 2}, {"source": "UFSC", "target": "Computer Vision", "value": 1}, {"source": "UFSC", "target": "Multi-Agent Systems", "value": 1}, {"source": "UFSC", "target": "Simulation", "value": 1}]};
+const drillTrees = {"Plot-in": {"id": "Plot-in", "desc": "Open-source computer-vision runtime that turns chart images and PDFs into structured, analysis-ready data. Solo project, 96% Python.", "meta": "", "children": [{"id": "Input & Orchestration", "desc": "Resolves PDFs and images into a normalized asset, then routes each chart through the right extraction strategy.", "meta": "", "children": [{"id": "ChartAnalysisOrchestrator", "desc": "Top-level conductor that runs the full pipeline end-to-end for a single chart request.", "meta": "src/ChartAnalysisOrchestrator.py"}, {"id": "AnalysisManager", "desc": "Coordinates a batch analysis session across the GUI and CLI entry points.", "meta": "src/core/analysis_manager.py"}, {"id": "ChartAnalysisPipeline", "desc": "Composable pipeline object chaining classification → calibration → extraction → export.", "meta": "src/pipelines/chart_pipeline.py"}, {"id": "StrategyRouter", "desc": "Picks which extraction strategy (standard, hybrid, or VLM) handles a given chart.", "meta": "src/strategies/router.py"}, {"id": "Standard / Hybrid / VLM Strategy", "desc": "Three interchangeable extraction strategies, from pure CV to hybrid to vision-language-model backed.", "meta": "src/strategies/*.py"}, {"id": "ResolvedAsset / input_resolver", "desc": "Normalizes a raw upload — image, multi-page PDF, or URL — into a single resolvable asset.", "meta": "src/core/input_resolver.py"}, {"id": "ServiceContainer", "desc": "Lightweight dependency-injection container wiring services into the pipeline.", "meta": "src/services/service_container.py"}]}, {"id": "Chart Classification", "desc": "A dedicated classifier per chart family, feeding the model-routing stage that picks the right extraction handler.", "meta": "", "children": [{"id": "BarChartClassifier", "desc": "Distinguishes vertical/horizontal/stacked bar layouts before extraction.", "meta": "src/core/classifiers/bar_chart_classifier.py"}, {"id": "LineChartClassifier", "desc": "Detects multi-series line charts and axis conventions.", "meta": "src/core/classifiers/line_chart_classifier.py"}, {"id": "ScatterChartClassifier", "desc": "Flags scatter/bubble layouts and point-density patterns.", "meta": "src/core/classifiers/scatter_chart_classifier.py"}, {"id": "PieChartClassifier", "desc": "Identifies pie/donut charts and slice-label layout.", "meta": "src/core/classifiers/pie_chart_classifier.py"}, {"id": "HistogramChartClassifier", "desc": "Separates histograms from adjacent-bar charts by bin geometry.", "meta": "src/core/classifiers/histogram_chart_classifier.py"}, {"id": "BoxChartClassifier", "desc": "Recognizes box-and-whisker layouts, including notched variants.", "meta": "src/core/classifiers/box_chart_classifier.py"}, {"id": "HeatmapChartClassifier", "desc": "Detects grid/heatmap charts ahead of the dedicated heatmap sub-pipeline.", "meta": "src/core/classifiers/heatmap_chart_classifier.py"}, {"id": "ProductionSpatialClassifier", "desc": "Production-hardened spatial classifier used as the default routing model.", "meta": "src/core/classifiers/production_classifier.py"}]}, {"id": "Calibration Engines", "desc": "Maps pixel coordinates to data coordinates — the step that turns 'a bar this tall' into an actual number.", "meta": "", "children": [{"id": "RANSACCalibration", "desc": "Robust axis-tick fitting that rejects outlier tick detections.", "meta": "src/calibration/calibration_adaptive.py"}, {"id": "PROSACCalibration", "desc": "Progressive sample-consensus variant for higher-precision tick alignment.", "meta": "src/calibration/calibration_precise.py"}, {"id": "NeuralCalibration / LogCalibration", "desc": "Learned calibration for irregular or log-scaled axes.", "meta": "src/calibration/calibration_neural.py"}, {"id": "FastCalibration", "desc": "Low-latency calibration path for the interactive GUI preview.", "meta": "src/calibration/calibration_fast.py"}, {"id": "ConformalPredictor", "desc": "Produces calibrated uncertainty intervals around extracted values.", "meta": "src/calibration/conformal.py"}, {"id": "VisualTickCalibration", "desc": "Vision-based tick-mark detector feeding calibration when OCR labels are unreliable.", "meta": "src/calibration/visual_tick_detector.py"}, {"id": "CalibrationFactory", "desc": "Selects and configures the right calibration engine per chart type.", "meta": "src/calibration/calibration_factory.py"}]}, {"id": "OCR & Text Fusion", "desc": "A multi-engine OCR layer with caching, so the correct text engine is used and only run once per region.", "meta": "", "children": [{"id": "UnifiedOCRSystemV2", "desc": "Orchestrator over every OCR engine, with zero-copy LRU caching and de-duplication.", "meta": "src/ocr/orchestrator/unified_ocr_system_v2.py"}, {"id": "EasyOCR / PaddleOCR Engines", "desc": "Two general-purpose OCR backends selectable per document quality.", "meta": "src/ocr/engines/ocr_engine_base.py"}, {"id": "FastOCREngine / PreciseOCREngine", "desc": "Speed-optimized vs. accuracy-optimized OCR passes for a quality/latency trade-off.", "meta": "src/ocr/engines/ocr_fast.py"}, {"id": "ParallelOCREngine", "desc": "Runs OCR tasks concurrently across detected text regions.", "meta": "src/ocr/engines/parallel_ocr_engine.py"}, {"id": "OCRPostProcessor", "desc": "Cleans and normalizes raw OCR output before it reaches calibration.", "meta": "src/ocr/ocr_postprocessor.py"}, {"id": "ZeroCopyHashCache / LRUCache", "desc": "Runtime caching layer that avoids redundant OCR passes on repeated regions.", "meta": "src/ocr/runtime/cache_runtime.py"}]}, {"id": "Chart-Type Extraction", "desc": "Per-chart-type handlers and extractors — the business logic that reads bars, lines, points, and boxes into numbers.", "meta": "", "children": [{"id": "Bar / Line / Scatter Handlers", "desc": "Chart-specific handlers implementing the shared CartesianChartHandler contract.", "meta": "src/handlers/*_handler.py"}, {"id": "Pie / Box / Histogram / Area Handlers", "desc": "Handlers for the remaining four supported chart families.", "meta": "src/handlers/*_handler.py"}, {"id": "RobustBarAssociator", "desc": "Associates detected bar segments with the correct category/legend label.", "meta": "src/extractors/bar_associator.py"}, {"id": "BarLabelMLP (Siamese MLP)", "desc": "NumPy-only Siamese network for matching bar labels without a heavy runtime.", "meta": "src/extractors/bar_label_model.py"}, {"id": "SmartWhiskerEstimator", "desc": "Estimates box-plot whisker extents from noisy pixel detections.", "meta": "src/extractors/smart_whisker_estimator.py"}, {"id": "ErrorBarValidator", "desc": "Sanity-checks detected error bars against the parent series.", "meta": "src/extractors/error_bar_validator.py"}, {"id": "LegendAssociator", "desc": "Matches legend swatches to series across all chart types.", "meta": "src/extractors/legend_associator.py"}]}, {"id": "Heatmap Sub-Pipeline", "desc": "Heatmaps get their own dedicated pipeline — grid rectification, color-to-value inversion, and axis-label interpolation.", "meta": "", "children": [{"id": "PROSACGridRectifier", "desc": "Rectifies a skewed or perspective-distorted heatmap grid.", "meta": "src/services/heatmap/grid_rectifier.py"}, {"id": "GoertzelLatticeDetector", "desc": "Uses a Goertzel-filter approach to detect the periodic grid lattice.", "meta": "src/services/heatmap/lattice_detector.py"}, {"id": "BimodalColorMapper / LUTColorInverter", "desc": "Inverts the color→value colormap, handling bimodal (diverging) scales.", "meta": "src/services/heatmap/bimodal_color_mapper.py"}, {"id": "BandedGotohAligner", "desc": "Sequence-alignment (Gotoh) approach to match row/column labels to grid cells.", "meta": "src/services/heatmap/sequence_aligner.py"}, {"id": "HybridGridAnchor / AxisLabelInterpolator", "desc": "Anchors the grid to detected axis labels and interpolates missing ones.", "meta": "src/services/heatmap/hybrid_grid_anchor.py"}, {"id": "HeatmapArtifactRejector", "desc": "Filters out non-data visual artifacts (borders, legends) from the grid.", "meta": "src/services/heatmap/artifact_rejector.py"}]}, {"id": "Interactive Editor & Desktop UI", "desc": "A PyQt6 desktop app with a fully editable detection canvas — every extracted point can be nudged, resized, or relabeled by hand.", "meta": "", "children": [{"id": "ModernChartAnalysisApp", "desc": "Main PyQt6 application window tying the canvas, data table, and pipeline together.", "meta": "src/main_modern.py"}, {"id": "DetectionScene / DetectionCanvasView", "desc": "Editable graphics scene rendering every detected chart element as a manipulable item.", "meta": "src/visual/detection_scene.py"}, {"id": "EditorStateManager (command pattern)", "desc": "Full undo/redo stack: Move, Resize, Delete, Create, and keypoint commands.", "meta": "src/visual/detection_editor_state.py"}, {"id": "LayeredRenderer", "desc": "Composites detection overlays, baselines, and image layers for the canvas.", "meta": "src/ui/rendering/layered_renderer.py"}, {"id": "AdvancedDataPanel", "desc": "Editable results table with export threading for large datasets.", "meta": "src/visual/advanced_data_panel.py"}, {"id": "BatchAnalysisThread / ModernAnalysisThread", "desc": "Background threads keeping the GUI responsive during batch runs.", "meta": "src/main_modern.py"}]}, {"id": "Evaluation & Statistical Validation", "desc": "A dedicated protocol-validation framework — the same one referenced in the resume's Cohen's Kappa / Lin's CCC metrics.", "meta": "", "children": [{"id": "AccuracyComparator / BatchEvaluator", "desc": "Compares extracted values against ground truth across a benchmark set.", "meta": "src/evaluation/accuracy_comparator.py"}, {"id": "run_protocol_validation", "desc": "Computes success rate, categorical accuracy, Lin's CCC, and Cohen's Kappa per run.", "meta": "src/validation/run_protocol_validation.py"}, {"id": "CalibrationTester", "desc": "Regression-tests calibration accuracy across chart types.", "meta": "src/evaluation/calibration_tester.py"}, {"id": "ConfidenceTuner", "desc": "Tunes confidence thresholds to balance precision and recall.", "meta": "src/evaluation/confidence_tuner.py"}, {"id": "HandlerAnalyzer", "desc": "Breaks down accuracy by handler to find weak spots per chart type.", "meta": "src/evaluation/handler_analyzer.py"}, {"id": "build_protocol_rows", "desc": "Builds the standardized protocol-row records used for cross-run comparison.", "meta": "src/core/protocol_row_builder.py"}]}, {"id": "Model Training", "desc": "Custom hyperparameter search for the classification and labeling models used earlier in the pipeline.", "meta": "", "children": [{"id": "EnhancedChartClassifierHypertuner", "desc": "Hyperparameter search for the chart-type classification models.", "meta": "src/train/classifier_hypertuner.py"}, {"id": "TypeSpecificLYLAAHypertuner", "desc": "Per-chart-type tuning pass built on a LYLAA-style search strategy.", "meta": "src/train/lylaa-hypertuner.py"}, {"id": "SiameseMLP", "desc": "NumPy-only inference model for label-matching, avoiding a heavy ML runtime.", "meta": "src/evaluation/train_bar_label_model.py"}]}, {"id": "Cross-Platform Packaging & CI", "desc": "One-click installers for Windows, macOS, and Linux, plus a GitHub Actions pipeline keeping every push tested.", "meta": "", "children": [{"id": "install.py + platform installers", "desc": "Unified installer with dedicated Windows (.bat), macOS (.command), and Linux (.sh) entry points.", "meta": "install_windows.bat / install_macos.command / install_linux.sh"}, {"id": "run_* launch scripts", "desc": "Per-platform launch scripts for both CLI and GUI modes.", "meta": "run_windows.bat / run_macos.command / run_linux.sh"}, {"id": "GitHub Actions CI/CD", "desc": "Automated test and build pipeline on every push.", "meta": ".github/workflows/"}]}]}, "h2_plant": {"id": "h2_plant", "desc": "Modular dual-path hydrogen production plant simulator — electrolysis and autothermal reforming (ATR) — with 325 files across a 12-layer Python architecture.", "meta": "", "children": [{"id": "Core Foundation", "desc": "The base contracts every component in the plant obeys: lifecycle, registry, streams, and shared physical constants.", "meta": "", "children": [{"id": "Component (abstract base)", "desc": "Standardized lifecycle every plant component implements: initialize, step, get_state.", "meta": "h2_plant/core/component.py"}, {"id": "ComponentRegistry", "desc": "Dependency-injection registry that wires components together by ID.", "meta": "h2_plant/core/component_registry.py"}, {"id": "CompositeComponent / PlantGraphBuilder", "desc": "Builds composite sub-systems and assembles the full plant as a directed graph.", "meta": "h2_plant/core/graph_builder.py"}, {"id": "Stream", "desc": "Typed process-stream object (mass/energy flow) passed between components.", "meta": "h2_plant/core/stream.py"}, {"id": "Exception hierarchy", "desc": "H2PlantError family: component, registry, configuration, and thermodynamic-convergence errors.", "meta": "h2_plant/core/exceptions.py"}, {"id": "Constants & Enums", "desc": "Gas/standard-conditions constants and state enums (TankState, SystemMode, DispatchStrategyEnum...).", "meta": "h2_plant/core/constants.py"}]}, {"id": "Component Library", "desc": "81 files covering every physical unit in the plant, grouped into nine subsystems — the actual hardware being simulated.", "meta": "", "children": [{"id": "Electrolysis (PEM & SOEC)", "desc": "The two electrolytic hydrogen-production pathways, from stack physics to balance-of-plant.", "meta": "", "children": [{"id": "DetailedPEMElectrolyzer", "desc": "Full PEM electrolyzer stack model with balance-of-plant components.", "meta": "h2_plant/components/electrolysis/pem_electrolyzer.py"}, {"id": "SOECOperator", "desc": "Solid-oxide electrolysis cell operating-point controller.", "meta": "h2_plant/components/electrolysis/soec_operator.py"}, {"id": "RectifierTransformer", "desc": "AC/DC power conversion feeding the electrolyzer stack.", "meta": "h2_plant/components/electrolysis/pem_electrolyzer.py"}, {"id": "RecirculationPump / HeatExchanger", "desc": "Stack water recirculation loop and its heat-exchange stage.", "meta": "h2_plant/components/electrolysis/pem_electrolyzer.py"}, {"id": "PSAUnit (in-stack)", "desc": "Pressure-swing adsorption stage local to the electrolyzer train.", "meta": "h2_plant/components/electrolysis/pem_electrolyzer.py"}]}, {"id": "Reforming (ATR)", "desc": "The autothermal-reforming production route: syngas generation, water-gas shift, and thermal integration.", "meta": "", "children": [{"id": "IntegratedATRPlant", "desc": "Top-level ATR train tying reactor, shift, and separation stages together.", "meta": "h2_plant/components/reforming/integrated_atr_plant.py"}, {"id": "WGSReactor", "desc": "Water-gas-shift reactor converting CO + H2O → CO2 + H2.", "meta": "h2_plant/components/atr/wgs_reactor.py"}, {"id": "ATRDataManager / ATRBaseComponent", "desc": "Shared data model and base class for all ATR-train components.", "meta": "h2_plant/components/reforming/atr_data_manager.py"}, {"id": "ATRRateLimiter", "desc": "Enforces physical ramp-rate limits on the reforming reaction.", "meta": "h2_plant/components/reforming/atr_rate_limiter.py"}, {"id": "ATRSyngasCooler / Boiler", "desc": "Thermal recovery from syngas cooling into steam generation.", "meta": "h2_plant/components/reforming/atr_recovery.py"}, {"id": "ATRSystemCompressor / ProductSeparator", "desc": "Compression and gas/liquid separation stages of the ATR train.", "meta": "h2_plant/components/reforming/atr_system_components.py"}]}, {"id": "Separation & Purification", "desc": "Everything that turns raw product gas into fuel-cell or pipeline-grade hydrogen.", "meta": "", "children": [{"id": "PSA / SyngasPSA", "desc": "Pressure-swing adsorption for hydrogen and syngas purification.", "meta": "h2_plant/components/separation/psa.py"}, {"id": "TSAUnit", "desc": "Temperature-swing adsorption drying stage.", "meta": "h2_plant/components/separation/tsa_unit.py"}, {"id": "HydrogenMultiCyclone", "desc": "Multi-cyclone gas-liquid separator upstream of drying.", "meta": "h2_plant/components/separation/hydrogen_cyclone.py"}, {"id": "KnockOutDrum / Coalescer", "desc": "Bulk liquid knockout and fine-droplet coalescing.", "meta": "h2_plant/components/separation/knock_out_drum.py"}, {"id": "DeoxoReactor", "desc": "Catalytic deoxygenation stage for trace-oxygen removal.", "meta": "h2_plant/components/purification/deoxo_reactor.py"}]}, {"id": "Storage", "desc": "Compressed-gas and battery storage, including source-isolated tank arrays that keep production routes segregated.", "meta": "", "children": [{"id": "DetailedTank / DetailedTankArray", "desc": "Physics-based tank model with real-gas state tracking.", "meta": "h2_plant/components/storage/detailed_tank.py"}, {"id": "SourceIsolatedTanks", "desc": "Keeps electrolysis- and ATR-sourced hydrogen segregated by tag.", "meta": "h2_plant/components/storage/source_isolated_tanks.py"}, {"id": "H2StorageTankEnhanced / TankArray", "desc": "Enhanced storage-tank models used by the simpler production paths.", "meta": "h2_plant/components/storage/h2_storage_enhanced.py"}, {"id": "OxygenBuffer", "desc": "Buffers by-product oxygen for downstream use or venting.", "meta": "h2_plant/components/storage/oxygen_buffer.py"}, {"id": "BatteryStorage (BESS)", "desc": "Battery energy-storage model for grid backup and load leveling.", "meta": "h2_plant/components/storage/battery_storage.py"}]}, {"id": "Thermal & Utility Balance", "desc": "Heat management across the plant — exchangers, chillers, boilers, and compressors that keep every stage in spec.", "meta": "", "children": [{"id": "ThermalManager", "desc": "Coordinates heat integration across all thermal components.", "meta": "h2_plant/components/thermal/thermal_manager.py"}, {"id": "HeatExchanger / Interchanger", "desc": "Generic and process-to-process heat-exchange units.", "meta": "h2_plant/components/thermal/heat_exchanger.py"}, {"id": "Chiller / DryCooler", "desc": "Active and passive cooling stages for process streams.", "meta": "h2_plant/components/thermal/chiller.py"}, {"id": "ElectricBoiler / SteamGenerator / Attemperator", "desc": "Steam generation and temperature-attemperation for the ATR train.", "meta": "h2_plant/components/thermal/electric_boiler.py"}, {"id": "CompressorSingle / FluidStrategy", "desc": "Compressor stage supporting multiple fluid-property strategies.", "meta": "h2_plant/components/compression/compressor_single.py"}]}, {"id": "Water Treatment", "desc": "Ultrapure water production and balance-tracking feeding the electrolyzer stacks.", "meta": "", "children": [{"id": "WaterPurifier / WaterQualityTestBlock", "desc": "Purification train with in-line water-quality testing.", "meta": "h2_plant/components/water/water_purifier.py"}, {"id": "UltrapureWaterStorageTank / UltraPureWaterTank", "desc": "Storage for electrolyzer-grade ultrapure water.", "meta": "h2_plant/components/water/storage.py"}, {"id": "WaterBalanceTracker", "desc": "Tracks plant-wide water balance across all consumers and sources.", "meta": "h2_plant/components/water/water_balance_tracker.py"}, {"id": "WaterPumpThermodynamic", "desc": "Thermodynamically-aware water pump model.", "meta": "h2_plant/components/water/water_pump.py"}, {"id": "MakeupMixer / SignalMakeupMixer", "desc": "Blends makeup water into the treatment loop.", "meta": "h2_plant/components/water/makeup_mixer.py"}]}, {"id": "Mixing & Distribution", "desc": "Combines and splits multi-component gas and water streams across the plant.", "meta": "", "children": [{"id": "MultiComponentMixer", "desc": "Rigorous multi-component gas mixing with phase-equilibrium handling.", "meta": "h2_plant/components/mixing/multicomponent_mixer.py"}, {"id": "OxygenMixer / H2Distribution", "desc": "By-product oxygen blending and hydrogen-distribution manifolds.", "meta": "h2_plant/components/mixing/oxygen_mixer.py"}, {"id": "StreamSplitter / WaterMixer", "desc": "Splits and recombines process streams across parallel trains.", "meta": "h2_plant/components/mixing/stream_splitter.py"}]}, {"id": "Carbon Capture", "desc": "CO2 handling for the ATR pathway's process emissions.", "meta": "", "children": [{"id": "DetailedCO2Capture / CO2CaptureUnit", "desc": "Post-combustion-style CO2 capture unit for the ATR route.", "meta": "h2_plant/components/carbon/co2_capture_detailed.py"}, {"id": "CO2Storage", "desc": "Captured-CO2 storage and tracking.", "meta": "h2_plant/components/carbon/co2_storage.py"}]}, {"id": "External Interfaces & Delivery", "desc": "Models the plant's boundary — external feedstocks in, product delivery out.", "meta": "", "children": [{"id": "ExternalH2 / Oxygen / Water / Heat Sources", "desc": "Boundary models for external utility and feedstock inputs.", "meta": "h2_plant/components/external/*.py"}, {"id": "BiogasSource / OxygenMakeupNode", "desc": "Alternative feedstock and oxygen-makeup boundary models.", "meta": "h2_plant/components/external/biogas_source.py"}, {"id": "DischargeStation / StationUnit / DockState", "desc": "Truck-loading discharge station with per-dock state tracking.", "meta": "h2_plant/components/delivery/discharge_station.py"}, {"id": "Consumer / SimpleWindCoordinator", "desc": "Demand-side consumer model and a simple wind-generation coordinator.", "meta": "h2_plant/components/logistics/consumer.py"}]}]}, {"id": "Configuration System", "desc": "Declarative YAML/JSON plant definitions validated against a full Pydantic-style schema — no code changes to model a new plant.", "meta": "", "children": [{"id": "PlantConfig (root schema)", "desc": "Root configuration schema nesting every subsystem's config block.", "meta": "h2_plant/config/plant_config.py"}, {"id": "ElectrolyzerConfig / ATRConfig / PEMConfig / SOECConfig", "desc": "Production-route-specific configuration schemas.", "meta": "h2_plant/config/plant_config.py"}, {"id": "StorageConfig / CompressionConfig / DemandConfig", "desc": "Storage, compression, and demand-schedule configuration blocks.", "meta": "h2_plant/config/plant_config.py"}, {"id": "PlantBuilder", "desc": "Factory that assembles a live plant graph from a validated config.", "meta": "h2_plant/config/plant_builder.py"}, {"id": "TopologyValidator", "desc": "Validates that a configured plant topology is physically and logically consistent.", "meta": "h2_plant/config/validator.py"}, {"id": "PEM/SOEC/Hybrid/Water Constants", "desc": "Physics constants split by production pathway.", "meta": "h2_plant/config/constants_physics.py"}]}, {"id": "Dispatch & Control", "desc": "Decides, at each timestep, how much hydrogen each pathway should produce.", "meta": "", "children": [{"id": "ReferenceHybridStrategy", "desc": "Baseline dispatch splitting load between PEM and SOEC/ATR routes.", "meta": "h2_plant/control/dispatch.py"}, {"id": "SoecOnlyStrategy / EconomicSpotDispatchStrategy", "desc": "Single-route and spot-price-optimal dispatch strategies.", "meta": "h2_plant/control/dispatch.py"}, {"id": "HybridArbitrageEngineStrategy", "desc": "Price-arbitrage dispatch strategy across both production routes.", "meta": "h2_plant/control/engine_dispatch.py"}, {"id": "DispatchState / DispatchResult", "desc": "Structured input/output records for every dispatch decision.", "meta": "h2_plant/control/dispatch.py"}]}, {"id": "Simulation Engine", "desc": "Event-driven core loop with checkpointing, so multi-day plant runs can pause, save, and resume exactly where they left off.", "meta": "", "children": [{"id": "SimulationEngine", "desc": "Top-level event-driven simulation loop.", "meta": "h2_plant/simulation/engine.py"}, {"id": "EventScheduler / Event", "desc": "Priority-queue event scheduler driving the simulation clock.", "meta": "h2_plant/simulation/event_scheduler.py"}, {"id": "FlowNetwork / FlowTracker", "desc": "Topology-aware tracking of every mass/energy flow through the plant graph.", "meta": "h2_plant/simulation/flow_tracker.py"}, {"id": "MonitoringSystem", "desc": "Real-time monitoring hooks during a running simulation.", "meta": "h2_plant/simulation/monitoring.py"}, {"id": "StateManager (checkpointing)", "desc": "Serializes full simulation state for pause/resume and crash recovery.", "meta": "h2_plant/simulation/state_manager.py"}]}, {"id": "Pathway Orchestration", "desc": "Coordinates how load is allocated between the electrolysis and ATR pathways under a chosen strategy.", "meta": "", "children": [{"id": "IsolatedProductionPath", "desc": "Self-contained single-pathway production chain.", "meta": "h2_plant/pathways/isolated_production_path.py"}, {"id": "DualPathCoordinator / IntegratedPlant", "desc": "Coordinates both pathways running together in one plant.", "meta": "h2_plant/pathways/dual_path_coordinator.py"}, {"id": "CostOptimal / PriorityGrid / PriorityATR / Balanced / EmissionsOptimal", "desc": "Five interchangeable allocation strategies for splitting load between pathways.", "meta": "h2_plant/pathways/allocation_strategies.py"}]}, {"id": "Performance Optimization", "desc": "The layer that makes a full-plant, second-by-second simulation actually fast enough to run.", "meta": "", "children": [{"id": "LUTManager / LUTConfig", "desc": "Lookup-table cache for expensive thermodynamic property calculations.", "meta": "h2_plant/optimization/lut_manager.py"}, {"id": "CoolPropLUT", "desc": "CoolProp-backed lookup tables for real-gas and steam properties.", "meta": "h2_plant/optimization/coolprop_lut.py"}, {"id": "Numba JIT hot paths", "desc": "Just-in-time compiled hot loops across the component and physics layers.", "meta": "h2_plant/optimization/"}]}, {"id": "Techno-Economic Analysis", "desc": "A proprietary OPEX/LCOH methodology producing capital and operating cost reports directly from a simulated plant.", "meta": "", "children": [{"id": "CapexGenerator", "desc": "Generates capital-expenditure estimates scaled from 75 kW to 2,600 kW.", "meta": "h2_plant/economics/capex_generator.py"}, {"id": "OpexGenerator / OpexReport", "desc": "Operating-expenditure modeling with category-level breakdowns.", "meta": "h2_plant/economics/opex_generator.py"}, {"id": "LcohCalculator / LcohReport", "desc": "Computes levelized cost of hydrogen from simulated production data.", "meta": "h2_plant/economics/lcoh_calculator.py"}, {"id": "Turton / VendorQuote / Scaling Cost Strategies", "desc": "Multiple interchangeable equipment-costing methodologies (incl. Turton correlations).", "meta": "h2_plant/economics/cost_strategies.py"}, {"id": "AACECostClass / CEPCIData", "desc": "Cost-class definitions and cost-index data for inflation-adjusted estimates.", "meta": "h2_plant/economics/models.py"}]}, {"id": "Visual Node-Editor GUI", "desc": "A 79-file PyQt6 desktop application: a visual node editor for building plants without touching YAML.", "meta": "", "children": [{"id": "Industrial Layout Engine", "desc": "Auto-arranges the plant's node graph into a clean industrial P&ID-style layout.", "meta": "h2_plant/gui/core/industrial_layout_engine.py"}, {"id": "Per-subsystem visual nodes", "desc": "Dedicated draggable node types for electrolysis, reforming, separation, storage, thermal, and water.", "meta": "h2_plant/gui/nodes/"}, {"id": "Scenario Workspace / Bundle Exporter", "desc": "Saves and reloads full plant scenarios as portable bundles.", "meta": "h2_plant/gui/core/scenario_workspace.py"}, {"id": "Topology Inference", "desc": "Infers a valid plant topology from the nodes and connections drawn on canvas.", "meta": "h2_plant/gui/core/topology_inference.py"}, {"id": "Theme Manager (One Dark Pro / Light)", "desc": "Switchable editor themes for the desktop app.", "meta": "h2_plant/gui/themes/theme_manager.py"}]}, {"id": "Reporting & Visualization", "desc": "Turns raw simulation output into dashboards, plots, and shareable reports.", "meta": "", "children": [{"id": "ReportGenerator / ScenarioSummaryAccumulator", "desc": "Builds per-scenario summary reports across a simulation run.", "meta": "h2_plant/reporting/report_generator.py"}, {"id": "DashboardGenerator", "desc": "Generates an interactive results dashboard from a completed run.", "meta": "h2_plant/visualization/dashboard_generator.py"}, {"id": "GraphCatalog / GraphOrchestrator", "desc": "Catalogs and orchestrates which plots get generated for a given run.", "meta": "h2_plant/visualization/graph_catalog.py"}, {"id": "MetricsCollector / StreamingDownsampler", "desc": "Collects live metrics and downsamples them for memory-safe long-run plotting.", "meta": "h2_plant/visualization/metrics_collector.py"}, {"id": "EnergyPriceLoader / DataProcessor", "desc": "Loads external energy-price series and post-processes simulation data.", "meta": "h2_plant/data/price_loader.py"}]}, {"id": "Testing & Benchmarks", "desc": "95%+ coverage across unit, integration, and end-to-end suites, with a dedicated pytest-benchmark performance harness.", "meta": "", "children": [{"id": "Component / Core test suites", "desc": "Unit tests for every standardized component and core contract.", "meta": "h2_plant/tests/components/, h2_plant/tests/core/"}, {"id": "Integration & E2E suites", "desc": "Full-plant integration and end-to-end scenario tests.", "meta": "h2_plant/tests/integration/, h2_plant/tests/e2e/"}, {"id": "benchmark_suite.py", "desc": "Standalone performance-benchmark suite run via pytest-benchmark.", "meta": "benchmark_suite.py"}]}, {"id": "Scenarios & Tooling", "desc": "Baseline plant scenarios and standalone analysis tools built alongside the core package.", "meta": "", "children": [{"id": "Baseline plant scenarios", "desc": "Ready-to-run YAML scenario definitions for both production routes.", "meta": "scenarios/"}, {"id": "WindDataProcessor", "desc": "Standalone tool analyzing wind-resource data for the renewable-input model.", "meta": "tools/wind_analysis/WindDataProcessor_2023_2024.py"}, {"id": "OPEX feed reconstruction tools", "desc": "Scripts reconstructing OPEX input columns for the economics module.", "meta": "tools/reconstruct_opex_feed_columns.py"}]}]}, "Matrix_Factory": {"id": "Matrix_Factory", "desc": "Co-simulation digital twin of a PEM fuel-cell production line: a Python physics engine and a Java BDI cognitive layer, synchronized in real time over gRPC.", "meta": "", "children": [{"id": "Physical Engine Core", "desc": "Shared foundation for every physics model in the Python engine.", "meta": "", "children": [{"id": "Component (abstract base)", "desc": "Base lifecycle class every physics component in the engine implements.", "meta": "physical_engine/core/component.py"}, {"id": "GasConstants / StandardConditions", "desc": "Shared physical constants for gas behavior and standard conditions.", "meta": "physical_engine/core/constants.py"}, {"id": "TankState (enum)", "desc": "Discrete tank-state model shared across storage components.", "meta": "physical_engine/core/enums.py"}, {"id": "ComponentInitializationError", "desc": "Raised when a physics component fails to initialize from its config.", "meta": "physical_engine/core/exceptions.py"}]}, {"id": "PEM Fuel-Cell Electrochemistry", "desc": "The electrochemical heart of the twin: a Newton-Raphson solver over the full PEM fuel-cell voltage equation.", "meta": "", "children": [{"id": "calculate_nernst_potential", "desc": "Computes the thermodynamic Nernst potential for the fuel-cell reaction.", "meta": "physical_engine/factory_simulation/pemfc_model.py"}, {"id": "calculate_pemfc_voltage", "desc": "Full cell voltage from Nernst potential minus activation, ohmic, and concentration overpotentials.", "meta": "physical_engine/factory_simulation/pemfc_model.py"}, {"id": "newton_raphson_solver", "desc": "Iterative solver finding the operating current for a target voltage/load.", "meta": "physical_engine/factory_simulation/pemfc_model.py"}, {"id": "batch_polarization_sweep", "desc": "Numba-JIT-compiled parallel sweep across the full polarization curve.", "meta": "physical_engine/factory_simulation/pemfc_model.py"}, {"id": "StackThermalModel", "desc": "Thermal dynamics of the fuel-cell stack, validated against steady-state and decay behaviour tests.", "meta": "physical_engine/factory_simulation/stack_thermal_model.py"}, {"id": "StationParameters (stochastics)", "desc": "Stochastic station-level parameters feeding run-to-run variance.", "meta": "physical_engine/factory_simulation/station_stochastics.py"}]}, {"id": "Factory Hardware Models", "desc": "The rest of the physical production line surrounding the fuel-cell stack.", "meta": "", "children": [{"id": "CompressorStage", "desc": "Multi-stage compressor model for the hydrogen supply line.", "meta": "physical_engine/factory_simulation/compressor.py"}, {"id": "TankArray", "desc": "Hydrogen buffer-tank array feeding the test bench.", "meta": "physical_engine/factory_simulation/h2_tank.py"}]}, {"id": "Performance Layer", "desc": "Numba JIT compilation and lookup tables keep the physics engine fast enough for real-time co-simulation.", "meta": "", "children": [{"id": "LUTManager / LUTConfig", "desc": "Lookup-table cache shared with the h2_plant optimization layer's design.", "meta": "physical_engine/optimization/lut_manager.py"}, {"id": "numba_ops (+ pure-Python fallback)", "desc": "JIT-compiled numeric kernels with a pure-Python fallback path.", "meta": "physical_engine/optimization/numba_ops.py"}]}, {"id": "gRPC Co-Simulation Bridge", "desc": "The HLA-style real-time synchronization layer joining the Python physics engine to the Java agent world.", "meta": "", "children": [{"id": "SimBridgeServicer / SimBridgeStub", "desc": "gRPC service exposing simulation state and step control to the Java side.", "meta": "physical_engine/protos/sim_bridge_pb2_grpc.py"}, {"id": "sim_bridge_server.py", "desc": "Python-side gRPC server hosting the physics engine for remote stepping.", "meta": "physical_engine/sim_bridge_server.py"}, {"id": "GrpcClientBridge.java", "desc": "Java-side gRPC client driving the physics engine from the agent layer.", "meta": "src/main/java/factory/GrpcClientBridge.java"}, {"id": "ThermoStateIndex / ProtoIndex", "desc": "Index mapping between protobuf messages and internal thermodynamic state.", "meta": "physical_engine/proto_index.py"}]}, {"id": "BDI Cognitive Layer — Cartago Artifacts", "desc": "The Java/JaCaMo world model: each physical asset is exposed to Jason BDI agents as a Cartago artifact.", "meta": "", "children": [{"id": "AMRArtifact + STNode (Space-Time A*)", "desc": "Simulates the AMR fleet's physical position using cooperative, race-free space-time A* routing.", "meta": "src/main/java/factory/AMRArtifact.java"}, {"id": "BaseStationArtifact / TestBenchArtifact", "desc": "Artifacts for loading/unloading stations and the fuel-cell test bench.", "meta": "src/main/java/factory/BaseStationArtifact.java"}, {"id": "SupervisorArtifact / UtilitySystemArtifact", "desc": "High-level supervisory artifact and shared utility-system state.", "meta": "src/main/java/factory/SupervisorArtifact.java"}, {"id": "DatabaseArtifact / EnergyPriceArtifact", "desc": "Persistence and live energy-price feed exposed to agents.", "meta": "src/main/java/factory/DatabaseArtifact.java"}, {"id": "TimerArtifact", "desc": "Shared simulation-clock artifact agents synchronize against.", "meta": "src/main/java/factory/TimerArtifact.java"}]}, {"id": "Organizational Architecture — PROSA/ADACOR", "desc": "Two coexisting manufacturing-organization paradigms — heterarchical and hierarchical — that the factory can transition between live.", "meta": "", "children": [{"id": "prosa_org.xml", "desc": "Heterarchical PROSA organizational specification (holonic, peer-to-peer negotiation).", "meta": "src/org/prosa_org.xml"}, {"id": "adacor_org.xml", "desc": "Hierarchical ADACOR organizational specification (supervisor-coordinated).", "meta": "src/org/adacor_org.xml"}, {"id": "OrgSchemaTransition (two-phase commit)", "desc": "Transitions the whole factory between PROSA and ADACOR using a two-phase-commit protocol.", "meta": "src/main/java/factory/OrgSchemaTransition.java"}]}, {"id": "Telemetry & Security", "desc": "A live canvas dashboard fed over an authenticated WebSocket channel.", "meta": "", "children": [{"id": "TelemetryHub / TelemetryArtifact", "desc": "Aggregates and broadcasts live simulation telemetry.", "meta": "src/main/java/factory/TelemetryHub.java"}, {"id": "TelemetryWebSocketEndpoint", "desc": "WebSocket endpoint streaming telemetry frames to the dashboard.", "meta": "src/main/java/factory/TelemetryWebSocketEndpoint.java"}, {"id": "TicketAuthConfigurator / TicketIssuer", "desc": "HMAC-SHA256 short-lived ticket auth securing the WebSocket handshake.", "meta": "src/main/java/factory/TicketIssuer.java"}, {"id": "dashboard.js", "desc": "Canvas-based live telemetry dashboard front-end.", "meta": "visualization/dashboard.js"}]}, {"id": "Run Management & Reproducibility", "desc": "Generates the JaCaMo configuration for a run and manages its lifecycle end-to-end.", "meta": "", "children": [{"id": "RunManager", "desc": "Orchestrates a full simulation run from launch to teardown.", "meta": "src/main/java/factory/RunManager.java"}, {"id": "Phase4JcmGenerator / generate_factory_jcm.py", "desc": "Generates the .jcm JaCaMo configuration describing agents and artifacts.", "meta": "scripts/generate_factory_jcm.py"}, {"id": "daemon_launcher.py", "desc": "Launches and supervises the physics-engine daemon process.", "meta": "physical_engine/daemon_launcher.py"}]}, {"id": "Experiments — Monte Carlo Replication", "desc": "A statistical experiment harness comparing organizational paradigms under seeded, reproducible conditions.", "meta": "", "children": [{"id": "run_prosa_vs_adacor.py", "desc": "Runs matched Monte Carlo trials comparing PROSA vs. ADACOR factory performance.", "meta": "experiments/run_prosa_vs_adacor.py"}, {"id": "analyze_results.py", "desc": "Statistical analysis of the comparative experiment output.", "meta": "experiments/analyze_results.py"}, {"id": "SeededReplayTests.java", "desc": "JUnit replay tests enforcing the same seeding discipline as the Python side.", "meta": "src/test/java/factory/SeededReplayTests.java"}, {"id": "InvariantTests.java / SimulationTestHarness.java", "desc": "Invariant checks and an in-process JUnit harness for the full simulation.", "meta": "src/test/java/factory/InvariantTests.java"}]}]}, "UFSC": {"id": "UFSC", "desc": "Control and Automation Engineering, Federal University of Santa Catarina — expected graduation 2027. Graduate coursework completed as a non-degree special student in PPGEAS (2024-2026).", "meta": "", "children": [{"id": "Artificial Intelligence", "kind": "Graduate Course", "meta": "Prof. Jomi Fred Hübner · 2024/2", "desc": "Search & CSP, knowledge representation, expert systems, and fuzzy logic."}, {"id": "Concurrency & Real-Time Systems", "kind": "Graduate Course", "meta": "Prof. Carlos Barros Montez · 2024/2", "desc": "Concurrency (threads, race conditions, deadlock) and real-time scheduling (RM, DM, EDF) on POSIX/RTOS."}, {"id": "Renewable Energy Systems Modeling & Control", "kind": "Graduate Course", "meta": "Prof. Marcus V. A. da Costa Filho · 2024/2", "desc": "Solar, wind, biomass, and green-hydrogen systems; microgrids and optimal load dispatch."}, {"id": "Machine Learning", "kind": "Graduate Course", "meta": "Prof. Eric Aislan Antonelo · 2025/2", "desc": "Inductive learning, Bayesian networks, neural networks, reinforcement learning, and genetic algorithms."}, {"id": "Mobile Robotics", "kind": "Graduate Course", "meta": "Prof. Edson Roberto De Pieri · 2025/2", "desc": "Locomotion, sensing, kinematics, navigation, mapping, and cooperative robotics."}, {"id": "Linear Dynamic Systems", "kind": "Graduate Course", "meta": "Prof. Daniel Ferreira Coutinho · 2026/1", "desc": "State-space and transfer-function models, controllability/observability, LQR/LQG, and Kalman filtering."}]}};
+const baseColors = {"Plot-in": "#22D3EE", "h2_plant": "#34D399", "Matrix_Factory": "#E879F9", "UFSC": "#A78BFA"};
+
+        // ============================================================
+        // STATE — single source of truth, all transitions funnel through navigate()
+        // ============================================================
+        const AppState = {
+            mode: "home",        // "home" | "drill"
+            drillPath: [],       // array of tree-node objects, root first
+            rootKey: null        // e.g. "h2_plant"
+        };
+
+        let currentSim = null;
+        let homeCenterForce = null;     // kept live so resize can retarget it without a rebuild
+        let drillXForce = null;
+        let drillYForce = null;
+        let drillFocusNode = null;
+        let drillChildNodes = null;
+
+        // ============================================================
+        // DOM / SVG SETUP (created once, never torn down)
+        // ============================================================
+        const tooltip = document.getElementById("tooltip");
+        const container = document.getElementById("graph-container");
+        let width = container.clientWidth;
+        let height = container.clientHeight;
+
+        const svg = d3.select("#graph-container")
+            .append("svg")
+            .attr("width", width)
+            .attr("height", height)
+            .attr("viewBox", [0, 0, width, height])
+            .attr("style", "max-width: 100%; height: auto;");
+
+        // Disable the built-in double-click-to-zoom so node dblclick can drive navigation instead
+        const zoom = d3.zoom()
+            .scaleExtent([0.1, 4])
+            .on("zoom", (event) => { g.attr("transform", event.transform); });
+        svg.call(zoom).on("dblclick.zoom", null);
+
+        const defs = svg.append("defs");
+        const filter = defs.append("filter")
+            .attr("id", "glow")
+            .attr("x", "-20%").attr("y", "-20%")
+            .attr("width", "140%").attr("height", "140%");
+        filter.append("feGaussianBlur").attr("stdDeviation", "4").attr("result", "blur");
+        const feMerge = filter.append("feMerge");
+        feMerge.append("feMergeNode").attr("in", "blur");
+        feMerge.append("feMergeNode").attr("in", "SourceGraphic");
+
+        const g = svg.append("g");
+
+        // Click on empty background = step back one level (ignored while at Home)
+        svg.on("click", () => { if (AppState.mode === "drill") goBack(); });
+
+        // ============================================================
+        // HELPERS
+        // ============================================================
+        function shade(hex, t) {
+            return d3.interpolateRgb(hex, "#ffffff")(t);
+        }
+
+        // Off-screen canvas used purely to measure label width so collision radii
+        // can account for text, not just the circle — fixes label/edge overlap.
+        const measureCanvas = document.createElement("canvas");
+        const measureCtx = measureCanvas.getContext("2d");
+        function textWidth(str, font) {
+            measureCtx.font = font;
+            return measureCtx.measureText(str).width;
+        }
+
+        function clearGraph() {
+            if (currentSim) { currentSim.stop(); currentSim = null; }
+            g.selectAll("*").remove();
+            hideTooltip();
+        }
+
+        // ---- Tooltip, with hysteresis so it doesn't flip-flop right at a boundary ----
+        let ttFlipX = false;
+        let ttFlipY = false;
+        const TT_OFFSET = 18;
+        const TT_SLACK = 60;
+
+        function positionTooltip(event) {
+            const ttRect = tooltip.getBoundingClientRect();
+            const w = ttRect.width;
+            const h = ttRect.height;
+
+            const rightEdge = event.pageX + TT_OFFSET + w;
+            if (!ttFlipX && rightEdge > window.innerWidth) ttFlipX = true;
+            else if (ttFlipX && rightEdge < window.innerWidth - TT_SLACK) ttFlipX = false;
+
+            const bottomEdge = event.pageY + TT_OFFSET + h;
+            if (!ttFlipY && bottomEdge > window.innerHeight) ttFlipY = true;
+            else if (ttFlipY && bottomEdge < window.innerHeight - TT_SLACK) ttFlipY = false;
+
+            const finalX = ttFlipX ? event.pageX - w - TT_OFFSET : event.pageX + TT_OFFSET;
+            const finalY = ttFlipY ? event.pageY - h - TT_OFFSET : event.pageY + TT_OFFSET;
+            tooltip.style.transform = `translate(${finalX}px, ${finalY}px)`;
+        }
+
+        function showTooltip(event, title, typeLabel, desc, meta, color) {
+            document.getElementById("tt-title").innerText = title;
+            document.getElementById("tt-title").style.color = color;
+            document.getElementById("tt-type").innerText = typeLabel;
+            document.getElementById("tt-desc").innerText = desc;
+            const ttMeta = document.getElementById("tt-meta");
+            if (meta && meta.length) {
+                ttMeta.textContent = meta;
+                ttMeta.classList.remove("hidden");
+            } else {
+                ttMeta.classList.add("hidden");
+            }
+            tooltip.style.opacity = 1;
+            positionTooltip(event);
+        }
+
+        function hideTooltip() {
+            tooltip.style.opacity = 0;
+        }
+
+        // ---- Drag (shared by home + drill simulations) ----
+        function drag(simulation) {
+            function dragstarted(event) {
+                if (!event.active) simulation.alphaTarget(0.3).restart();
+                event.subject.fx = event.subject.x;
+                event.subject.fy = event.subject.y;
+            }
+            function dragged(event) {
+                event.subject.fx = event.x;
+                event.subject.fy = event.y;
+            }
+            function dragended(event) {
+                if (!event.active) simulation.alphaTarget(0);
+                if (!event.subject.isFocus) {
+                    event.subject.fx = null;
+                    event.subject.fy = null;
+                }
+            }
+            return d3.drag().on("start", dragstarted).on("drag", dragged).on("end", dragended);
+        }
+
+        // ---- Glow on demand only (hover / focus), not permanently on every node — perf fix ----
+        function attachHoverGlow(circleSelection) {
+            circleSelection
+                .on("mouseover.glow", function() { d3.select(this).style("filter", "url(#glow)"); })
+                .on("mouseout.glow", function(event, d) { if (!d.isFocus && !d.isIdentity) d3.select(this).style("filter", null); });
+        }
+
+        // ---- Touch/mobile-safe "explore" badge — a guaranteed single-tap target ----
+        // (dblclick is unreliable on touch devices, so every expandable node also gets
+        // this permanently-visible affordance rather than relying on a hover-only tooltip button.)
+        function addExploreBadge(selection, onActivate) {
+            const badge = selection.append("g")
+                .attr("class", "explore-badge")
+                .attr("transform", d => {
+                    const r = d.radius !== undefined ? d.radius : d.r;
+                    const off = r * 0.72;
+                    return `translate(${off},${off})`;
+                })
+                .style("cursor", "pointer");
+
+            // oversized invisible hit-area first, for a comfortable touch target
+            badge.append("circle").attr("r", 15).attr("fill", "transparent");
+            badge.append("circle")
+                .attr("r", 10)
+                .attr("fill", "#0B0F19")
+                .attr("stroke", d => d.color)
+                .attr("stroke-width", 1.5);
+            badge.append("text")
+                .attr("text-anchor", "middle")
+                .attr("dy", "0.32em")
+                .attr("font-size", "13px")
+                .attr("font-weight", "700")
+                .attr("fill", d => d.color)
+                .text("+");
+
+            badge.on("click", function(event, d) {
+                event.stopPropagation();
+                onActivate(d);
+            });
+            return badge;
+        }
+
+        // ============================================================
+        // NAVIGATION — every transition goes through here (single state-mutation point)
+        // ============================================================
+        function navigate(nextMode, nextDrillPath, nextRootKey) {
+            AppState.mode = nextMode;
+            AppState.drillPath = nextDrillPath;
+            AppState.rootKey = nextRootKey;
+            if (nextMode === "home") renderHome(); else renderDrillLevel();
+        }
+
+        function enterDrill(rootKey) {
+            navigate("drill", [drillTrees[rootKey]], rootKey);
+        }
+        function drillInto(childTreeNode) {
+            navigate("drill", AppState.drillPath.concat([childTreeNode]), AppState.rootKey);
+        }
+        function goBack() {
+            if (AppState.mode !== "drill") return;
+            if (AppState.drillPath.length > 1) {
+                navigate("drill", AppState.drillPath.slice(0, -1), AppState.rootKey);
+            } else {
+                navigate("home", [], null);
+            }
+        }
+        function jumpToCrumb(index) {
+            if (index < 0) { navigate("home", [], null); return; }
+            navigate("drill", AppState.drillPath.slice(0, index + 1), AppState.rootKey);
+        }
+
+        // ============================================================
+        // BREADCRUMB
+        // ============================================================
+        function updateBreadcrumb() {
+            const bar = document.getElementById("breadcrumb-bar");
+            bar.innerHTML = "";
+
+            const homeCrumb = document.createElement("span");
+            homeCrumb.className = `crumb${AppState.mode === "home" ? " active" : ""}`;
+            homeCrumb.textContent = "\u2302 Home";
+            homeCrumb.onclick = () => jumpToCrumb(-1);
+            bar.appendChild(homeCrumb);
+
+            AppState.drillPath.forEach((node, i) => {
+                const sep = document.createElement("span");
+                sep.className = "crumb-sep";
+                sep.textContent = "\u203A";
+                bar.appendChild(sep);
+
+                const c = document.createElement("span");
+                c.className = `crumb${i === AppState.drillPath.length - 1 ? " active" : ""}`;
+                c.textContent = node.id;
+                c.onclick = () => jumpToCrumb(i);
+                bar.appendChild(c);
+            });
+
+            document.getElementById("back-hint").textContent = AppState.mode === "drill"
+                ? "Tap \u2295 or double-click a node to go deeper \u00b7 tap background / \u2190 to go back"
+                : "";
+
+            const backBtn = document.getElementById("go-back");
+            const atRoot = AppState.mode === "home";
+            backBtn.classList.toggle("opacity-30", atRoot);
+            backBtn.classList.toggle("pointer-events-none", atRoot);
+            backBtn.setAttribute("aria-disabled", atRoot ? "true" : "false");
+        }
+
+        // ============================================================
+        // LEGEND
+        // ============================================================
+        function renderLegendHome() {
+            const items = [
+                ["Identity", "#F8FAFC"], ["Category", "#64748B"],
+                ["Domain Skill", "#F472B6"], ["Technology", "#FBBF24"],
+                ["Experience", "#FB923C"], ["Education", "#A78BFA"],
+                ["Plot-in", "#22D3EE"], ["h2_plant", "#34D399"], ["Matrix_Factory", "#E879F9"]
+            ];
+            document.getElementById("legend-container").innerHTML = items.map(([label, color]) => `
+                <div class="flex items-center gap-3">
+                    <div class="w-3 h-3 rounded-full flex-shrink-0" style="background-color:${color}; box-shadow:0 0 10px ${color}"></div>
+                    <span class="text-slate-200 font-medium text-xs">${label}</span>
+                </div>`).join("");
+            document.getElementById("legend-hint").textContent =
+                "Hover a node for details. Tap \u2295 or double-click a project / UFSC to dive into its real architecture.";
+        }
+
+        function renderLegendDrill() {
+            const base = baseColors[AppState.rootKey];
+            const leafColor = shade(base, 0.6);
+            document.getElementById("legend-container").innerHTML = `
+                <div class="flex items-center gap-3">
+                    <div class="w-3 h-3 rounded-full flex-shrink-0" style="background-color:${base}; box-shadow:0 0 10px ${base}"></div>
+                    <span class="text-slate-200 font-medium text-xs">Current focus</span>
+                </div>
+                <div class="flex items-center gap-3">
+                    <div class="w-3 h-3 rounded-full flex-shrink-0" style="border:1.5px solid ${base}; opacity:0.85"></div>
+                    <span class="text-slate-200 font-medium text-xs">Has more detail (tap \u2295)</span>
+                </div>
+                <div class="flex items-center gap-3">
+                    <div class="w-2.5 h-2.5 rounded-full flex-shrink-0" style="background-color:${leafColor}; box-shadow:0 0 8px ${leafColor}"></div>
+                    <span class="text-slate-200 font-medium text-xs">Implementation detail</span>
+                </div>`;
+            document.getElementById("legend-hint").textContent =
+                "Tap \u2295 or double-click a pulsing node to go deeper. Tap empty space, press \u2190, or use a breadcrumb to go back.";
+        }
+
+        function groupLabel(groupNum) {
+            const labels = { 0: "Identity", 1: "Category", 2: "Project", 3: "History", 4: "Domain Skill", 5: "Technology" };
+            return labels[groupNum] || "Node";
+        }
+
+        // ============================================================
+        // HOME VIEW — full cross-linked galaxy
+        // ============================================================
+        function renderHome() {
+            clearGraph();
+            AppState.mode = "home";
+            AppState.drillPath = [];
+            AppState.rootKey = null;
+            updateBreadcrumb();
+            renderLegendHome();
+
+            const nodesData = homeData.nodes;
+            const linksData = homeData.links;
+
+            const centerForce = d3.forceCenter(width / 2, height / 2);
+            homeCenterForce = centerForce;
+
+            const simulation = d3.forceSimulation(nodesData)
+                .force("link", d3.forceLink(linksData).id(d => d.id).distance(d => 120 - d.value * 12))
+                .force("charge", d3.forceManyBody().strength(-400))
+                .force("center", centerForce)
+                .force("collide", d3.forceCollide().radius(d =>
+                    d.radius + 10 + textWidth(d.id, "600 11px Inter, sans-serif") * 0.55
+                ).iterations(2));
+            currentSim = simulation;
+
+            const link = g.append("g")
+                .attr("stroke", "#475569")
+                .selectAll("line")
+                .data(linksData)
+                .join("line")
+                .attr("class", "link")
+                .attr("stroke-width", d => Math.sqrt(d.value) * 1.5);
+
+            const node = g.append("g")
+                .selectAll("g")
+                .data(nodesData)
+                .join("g")
+                .call(drag(simulation))
+                .on("click", (event) => event.stopPropagation());
+
+            node.filter(d => d.drillKey)
+                .append("circle")
+                .attr("class", "pulse-ring")
+                .attr("r", d => d.radius + 8)
+                .attr("stroke", d => d.color);
+
+            const circles = node.append("circle")
+                .attr("class", "node-circle")
+                .attr("r", d => d.radius)
+                .attr("fill", d => d.color);
+            attachHoverGlow(circles);
+            // Keep a permanent, cheap glow on the single identity node — the one place it's free
+            node.filter(d => d.group === 0).select("circle.node-circle")
+                .datum(d => Object.assign(d, { isIdentity: true }))
+                .style("filter", "url(#glow)");
+
+            node.append("text")
+                .attr("class", "node-label")
+                .attr("x", d => d.radius + 8)
+                .attr("y", 4)
+                .text(d => d.id);
+
+            addExploreBadge(node.filter(d => d.drillKey), d => enterDrill(d.drillKey));
+
+            const linkedByIndex = {};
+            linksData.forEach(d => {
+                linkedByIndex[`${d.source.id},${d.target.id}`] = 1;
+                linkedByIndex[`${d.target.id},${d.source.id}`] = 1;
+            });
+            function isConnected(a, b) {
+                return linkedByIndex[`${a.id},${b.id}`] || linkedByIndex[`${b.id},${a.id}`] || a.id === b.id;
+            }
+
+            node.on("mouseover", function(event, d) {
+                node.transition().duration(200).style("opacity", o => isConnected(d, o) ? 1 : 0.05);
+                link.transition().duration(200)
+                    .style("stroke-opacity", o => (o.source === d || o.target === d ? 0.9 : 0))
+                    .style("stroke", o => (o.source === d || o.target === d ? d.color : "#475569"));
+                d3.select(this).select("circle.node-circle").transition().duration(200).attr("r", d.radius * 1.25);
+                showTooltip(event, d.id, groupLabel(d.group), d.desc, d.meta, d.color);
+            }).on("mousemove", (event) => positionTooltip(event))
+              .on("mouseout", function(event, d) {
+                node.transition().duration(300).style("opacity", 1);
+                link.transition().duration(300).style("stroke-opacity", 0.3).style("stroke", "#475569");
+                d3.select(this).select("circle.node-circle").transition().duration(300).attr("r", d.radius);
+                hideTooltip();
+            }).on("dblclick", function(event, d) {
+                event.stopPropagation();
+                if (d.drillKey) enterDrill(d.drillKey);
+            });
+
+            simulation.on("tick", () => {
+                link.attr("x1", d => d.source.x).attr("y1", d => d.source.y)
+                    .attr("x2", d => d.target.x).attr("y2", d => d.target.y);
+                node.attr("transform", d => `translate(${d.x},${d.y})`);
+            });
+        }
+
+        // ============================================================
+        // DRILL VIEW — radial single-level mind map
+        // ============================================================
+        function renderDrillLevel() {
+            clearGraph();
+            const focus = AppState.drillPath[AppState.drillPath.length - 1];
+            const children = focus.children || [];
+            updateBreadcrumb();
+            renderLegendDrill();
+
+            const cx = width / 2;
+            const cy = height / 2;
+            const depth = AppState.drillPath.length;
+            const baseColor = baseColors[AppState.rootKey];
+            const focusColor = shade(baseColor, Math.min(0.10 * (depth - 1), 0.5));
+            const n = Math.max(children.length, 1);
+            const R = children.length <= 6 ? Math.min(width, height) * 0.26 : Math.min(width, height) * 0.35;
+
+            const focusNode = {
+                id: focus.id, desc: focus.desc, meta: focus.meta || "",
+                color: focusColor, r: 34, x: cx, y: cy, fx: cx, fy: cy,
+                isFocus: true, hasChildren: true, treeRef: focus
+            };
+
+            const childNodes = children.map((c, i) => {
+                const angle = -Math.PI / 2 + i * (2 * Math.PI / n);
+                const hasKids = !!(c.children && c.children.length);
+                const r = hasKids ? 19 : 13;
+                const childColor = shade(baseColor, Math.min(0.14 * depth + (hasKids ? 0 : 0.20), 0.82));
+                return {
+                    id: c.id, desc: c.desc, meta: c.meta || "",
+                    color: childColor, r, x: cx + R * Math.cos(angle), y: cy + R * Math.sin(angle),
+                    angle, hasChildren: hasKids, treeRef: c
+                };
+            });
+
+            drillFocusNode = focusNode;
+            drillChildNodes = childNodes;
+
+            const simNodes = [focusNode, ...childNodes];
+            const simLinks = childNodes.map(cn => ({ source: focusNode, target: cn }));
+
+            const xForce = d3.forceX(d => d.isFocus ? cx : d.x).strength(d => d.isFocus ? 1 : 0.12);
+            const yForce = d3.forceY(d => d.isFocus ? cy : d.y).strength(d => d.isFocus ? 1 : 0.12);
+            drillXForce = xForce;
+            drillYForce = yForce;
+
+            const simulation = d3.forceSimulation(simNodes)
+                .force("link", d3.forceLink(simLinks).distance(d => d.source.r + d.target.r + 46).strength(0.5))
+                .force("charge", d3.forceManyBody().strength(-90))
+                .force("x", xForce)
+                .force("y", yForce)
+                .force("collide", d3.forceCollide(d => {
+                    const font = d.isFocus ? "700 14px Inter, sans-serif" : "600 11px Inter, sans-serif";
+                    return d.r + 14 + textWidth(d.id, font) * 0.6;
+                }));
+            currentSim = simulation;
+
+            const link = g.append("g")
+                .attr("stroke", baseColor)
+                .attr("stroke-opacity", 0.35)
+                .selectAll("line")
+                .data(simLinks)
+                .join("line")
+                .attr("class", "link")
+                .attr("stroke-width", 1.6);
+
+            const node = g.append("g")
+                .selectAll("g")
+                .data(simNodes)
+                .join("g")
+                .call(drag(simulation))
+                .on("click", (event) => event.stopPropagation());
+
+            node.filter(d => d.hasChildren)
+                .append("circle")
+                .attr("class", "pulse-ring")
+                .attr("r", d => d.r + 7)
+                .attr("stroke", d => d.color);
+
+            const circles = node.append("circle")
+                .attr("class", "node-circle")
+                .attr("r", d => d.r)
+                .attr("fill", d => d.color);
+            attachHoverGlow(circles);
+            node.filter(d => d.isFocus).select("circle.node-circle").style("filter", "url(#glow)");
+
+            node.append("text")
+                .attr("class", d => d.isFocus ? "node-label focus-label" : "node-label")
+                .attr("text-anchor", d => d.isFocus ? "middle" : (Math.cos(d.angle || 0) >= 0 ? "start" : "end"))
+                .attr("x", d => d.isFocus ? 0 : (Math.cos(d.angle || 0) >= 0 ? d.r + 8 : -(d.r + 8)))
+                .attr("y", d => d.isFocus ? d.r + 20 : 4)
+                .text(d => d.id);
+
+            addExploreBadge(node.filter(d => d.hasChildren && !d.isFocus), d => drillInto(d.treeRef));
+
+            node.on("mouseover", function(event, d) {
+                d3.select(this).select("circle.node-circle").transition().duration(150).attr("r", d.r * 1.15);
+                const typeLabel = d.isFocus ? "Current Focus" : (d.treeRef.kind || (d.hasChildren ? "Tap \u2295 to explore \u203A" : "Implementation detail"));
+                showTooltip(event, d.id, typeLabel, d.desc, d.meta, d.color);
+            }).on("mousemove", (event) => positionTooltip(event))
+              .on("mouseout", function(event, d) {
+                d3.select(this).select("circle.node-circle").transition().duration(150).attr("r", d.r);
+                hideTooltip();
+            }).on("dblclick", function(event, d) {
+                event.stopPropagation();
+                if (d.isFocus) goBack();
+                else if (d.hasChildren) drillInto(d.treeRef);
+            });
+
+            simulation.on("tick", () => {
+                link.attr("x1", d => d.source.x).attr("y1", d => d.source.y)
+                    .attr("x2", d => d.target.x).attr("y2", d => d.target.y);
+                node.attr("transform", d => `translate(${d.x},${d.y})`);
+            });
+        }
+
+        // ============================================================
+        // CONTROLS
+        // ============================================================
+        document.getElementById("zoom-in").addEventListener("click", () => {
+            svg.transition().duration(300).call(zoom.scaleBy, 1.3);
+        });
+        document.getElementById("zoom-out").addEventListener("click", () => {
+            svg.transition().duration(300).call(zoom.scaleBy, 0.7);
+        });
+        document.getElementById("reset-view").addEventListener("click", () => {
+            svg.transition().duration(750).call(zoom.transform, d3.zoomIdentity);
+            if (currentSim) currentSim.alpha(0.4).restart();
+        });
+        document.getElementById("go-back").addEventListener("click", () => goBack());
+        document.addEventListener("keydown", (e) => { if (e.key === "Escape") goBack(); });
+
+        // ---- Non-destructive resize: retarget the existing simulation, never rebuild the DOM ----
+        // This preserves the user's current pan/zoom and in-progress layout instead of wiping them.
+        let resizeRaf = null;
+        window.addEventListener("resize", () => {
+            if (resizeRaf) cancelAnimationFrame(resizeRaf);
+            resizeRaf = requestAnimationFrame(() => {
+                width = container.clientWidth;
+                height = container.clientHeight;
+                svg.attr("width", width).attr("height", height).attr("viewBox", [0, 0, width, height]);
+
+                if (AppState.mode === "home" && homeCenterForce) {
+                    homeCenterForce.x(width / 2).y(height / 2);
+                    if (currentSim) currentSim.alpha(0.3).restart();
+                } else if (AppState.mode === "drill" && drillFocusNode) {
+                    const cx = width / 2, cy = height / 2;
+                    const R = drillChildNodes.length <= 6 ? Math.min(width, height) * 0.26 : Math.min(width, height) * 0.35;
+                    drillFocusNode.fx = cx; drillFocusNode.fy = cy;
+                    drillChildNodes.forEach(c => {
+                        c.x = cx + R * Math.cos(c.angle);
+                        c.y = cy + R * Math.sin(c.angle);
+                    });
+                    if (drillXForce) drillXForce.x(d => d.isFocus ? cx : d.x);
+                    if (drillYForce) drillYForce.y(d => d.isFocus ? cy : d.y);
+                    if (currentSim) currentSim.alpha(0.35).restart();
+                }
+            });
+        });
+
+        // ============================================================
+        // INIT
+        // ============================================================
+        renderHome();
+    </script>
+</body>
+</html>
